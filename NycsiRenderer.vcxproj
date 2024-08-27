@@ -642,6 +642,8 @@
     <Content Include="external\include\glm\copying.txt" />
     <Content Include="external\lib\glfw3.lib" />
     <Content Include="external\lib\vulkan-1.lib" />
+    <Content Include="shaders\shader.frag" />
+    <Content Include="shaders\shader.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
