@@ -111,6 +111,8 @@ private:
     // Buffers
     VkBuffer vkVertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vkVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer vkIndexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vkIndexBufferMemory = VK_NULL_HANDLE;
     
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
@@ -133,7 +135,7 @@ private:
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
     // Creation Methods
-    void InitWindow();
+    void InitWindow();    
     void InitVulkan();
     void CreateInstance();
     void SelectPhysicalDevice();
@@ -149,7 +151,11 @@ private:
     // Drawing
     void CreateFramebuffers();
     void CreateCommandPool();
+    void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const;
+    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
+                      VkDeviceMemory& bufferMemory) const;
     void CreateVertexBuffer();
+    void CreateIndexBuffer();
     
     void CreateCommandBuffers();
     void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
