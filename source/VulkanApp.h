@@ -96,6 +96,7 @@ private:
     
     VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
     VkRenderPass vkRenderPass = VK_NULL_HANDLE;
+    VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE; 
     VkPipelineLayout vkPipelineLayout = VK_NULL_HANDLE;
     VkPipeline vkGraphicsPipeline = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapChainFramebuffers;
@@ -113,7 +114,14 @@ private:
     VkDeviceMemory vkVertexBufferMemory = VK_NULL_HANDLE;
     VkBuffer vkIndexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vkIndexBufferMemory = VK_NULL_HANDLE;
-    
+
+    // Uniform buffers. We need as many as frames in flight
+    std::vector<VkBuffer> vkUniformBuffers;
+    std::vector<VkDeviceMemory> vkUniformBuffersMemory;
+    std::vector<void*> vkUniformBuffersMapped;
+    VkDescriptorPool vkDescriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> vkDescriptorSets;
+
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
     bool IsDeviceSuitable(VkPhysicalDevice_T* device) const;
@@ -144,6 +152,7 @@ private:
     void CreateSwapChain();
     void ReCreateSwapChain();
     void CreateImageViews();
+    void CreateDescriptorSetLayout();
     void CreateGraphicsPipeline();
     [[nodiscard]] VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
     void CreateRenderPass();
@@ -151,17 +160,22 @@ private:
     // Drawing
     void CreateFramebuffers();
     void CreateCommandPool();
+
+    // Buffer Creation
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const;
-    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
-                      VkDeviceMemory& bufferMemory) const;
+    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) const;
     void CreateVertexBuffer();
     void CreateIndexBuffer();
+    void CreateUniformBuffers();
+    void CreateDescriptorPool();
+    void CreateDescriptorSets();
     
     void CreateCommandBuffers();
     void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void CreateSyncObjects();
     static std::vector<char> ReadFile(const std::string& filename);
-
+    void UpdateUniformBuffer(uint32_t currentImage) const;
+    
     void DrawFrame();
     void MainLoop();
 

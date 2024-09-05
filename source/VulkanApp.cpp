@@ -1,6 +1,7 @@
 ﻿#include "VulkanApp.h"
 
 #include <algorithm> // Necessary for std::clamp
+#include <chrono>
 #include <cstdint> // Necessary for uint32_t
 #include <cstring>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <limits> // Necessary for std::numeric_limits
 #include <set>
 #include <vector>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -15,6 +18,13 @@ constexpr uint32_t HEIGHT = 600;
 // Which validation layer we want to use
 const std::vector VALIDATION_LAYERS = { "VK_LAYER_KHRONOS_validation" };
 const std::vector DEVICE_EXTENSIONS = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+struct UniformBufferObject
+{
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
+};
 
 const std::vector<Vertex> VERTICES =
 {
@@ -295,12 +305,19 @@ void VulkanApp::InitVulkan()
     // We need to specify how many color and depth buffers there will be, how many samples to use
     // for each of them and how their contents should be handled throughout the rendering operations
     CreateRenderPass();
+    CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
 
     CreateFramebuffers();
     CreateCommandPool();
+    
     CreateVertexBuffer();
     CreateIndexBuffer();
+    CreateUniformBuffers();
+    
+    CreateDescriptorPool();
+    CreateDescriptorSets();
+    
     CreateCommandBuffers();
 
     // Synchronization
@@ -590,6 +607,27 @@ void VulkanApp::CreateImageViews()
     }
 }
 
+void VulkanApp::CreateDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    
+    // We need to specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(vkDevice, &layoutInfo, nullptr, &vkDescriptorSetLayout) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+    }
+}
+
 void VulkanApp::CreateGraphicsPipeline()
 {
     const std::vector<char> vertShaderCode = ReadFile("shaders/vert.spv");
@@ -654,7 +692,7 @@ void VulkanApp::CreateGraphicsPipeline()
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     // VkPipelineMultisampleStateCreateInfo struct configures multisampling, which is one of the ways to perform anti-aliasing
@@ -688,12 +726,12 @@ void VulkanApp::CreateGraphicsPipeline()
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
     
-    // Pipeline layout for Uniforms
+    // We need to specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0; // Optional
-    pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &vkDescriptorSetLayout;
+    
     if (vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, nullptr, &vkPipelineLayout) != VK_SUCCESS)
     {
         std::cout << "Failed to create pipeline layout!" << '\n';
@@ -726,6 +764,8 @@ void VulkanApp::CreateGraphicsPipeline()
     // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
 
+    CreateDescriptorSetLayout();
+    
     // FINALLY
     if (vkCreateGraphicsPipelines(vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vkGraphicsPipeline) != VK_SUCCESS)
     {
@@ -851,7 +891,7 @@ void VulkanApp::CreateCommandPool()
     }
 }
 
-    void VulkanApp::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const
+void VulkanApp::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const
 {
     // Memory transfer operations are executed using command buffers, just like drawing commands
     VkCommandBufferAllocateInfo allocInfo{};
@@ -878,7 +918,7 @@ void VulkanApp::CreateCommandPool()
 
     // We only have the copy command, we can stop now
     vkEndCommandBuffer(commandBuffer);
-
+    
     // Unlike the draw commands, there are no events we need to wait on this time
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -943,6 +983,82 @@ void VulkanApp::CreateIndexBuffer()
     // Free the staging
     vkDestroyBuffer(vkDevice, stagingBuffer, nullptr);
     vkFreeMemory(vkDevice, stagingBufferMemory, nullptr);
+}
+
+void VulkanApp::CreateUniformBuffers()
+{
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    vkUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    vkUniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    vkUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vkUniformBuffers[i], vkUniformBuffersMemory[i]);
+
+        // We map the buffer right after creation using vkMapMemory to get a pointer to which we can write the data later on
+        vkMapMemory(vkDevice, vkUniformBuffersMemory[i], 0, bufferSize, 0, &vkUniformBuffersMapped[i]);
+    }
+}
+
+void VulkanApp::CreateDescriptorPool()
+{
+    // We first need to describe which descriptor types our descriptor sets are going to contain and how many of them
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    // We will allocate one of these descriptors for every frame
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+
+    // Aside from the maximum number of individual descriptors that are available,
+    // we also need to specify the maximum number of descriptor sets that may be allocated:
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    if (vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &vkDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+}
+
+void VulkanApp::CreateDescriptorSets()
+{
+    // A descriptor set allocation is described with a VkDescriptorSetAllocateInfo struct
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, vkDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = vkDescriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    // In our case we will create one descriptor set for each frame in flight, all with the same layout.
+    // Unfortunately we do need all the copies of the layout because the next function expects an array matching the number of sets.
+    vkDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(vkDevice, &allocInfo, vkDescriptorSets.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    // The descriptor sets have been allocated now, but the descriptors within still need to be configured. 
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = vkUniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = vkDescriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(vkDevice, 1, &descriptorWrite, 0, nullptr);
+    }
 }
 
 void VulkanApp::CreateVertexBuffer()
@@ -1015,29 +1131,30 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     renderPassInfo.pClearValues = &clearColor;
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // We can now bind the graphics pipeline
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkGraphicsPipeline);
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChainExtent.width);
-    viewport.height = static_cast<float>(swapChainExtent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        // We can now bind the graphics pipeline
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkGraphicsPipeline);
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainExtent.width);
+        viewport.height = static_cast<float>(swapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapChainExtent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = {vkVertexBuffer};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, vkIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
-
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(INDICES.size()), 1, 0, 0, 0);
-    //vkCmdDraw(commandBuffer, static_cast<uint32_t>(VERTICES.size()), 1, 0, 0);
+        VkBuffer vertexBuffers[] = {vkVertexBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, vkIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipelineLayout, 0, 1, &vkDescriptorSets[currentFrame], 0, nullptr);
+    
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(INDICES.size()), 1, 0, 0, 0);
+        //vkCmdDraw(commandBuffer, static_cast<uint32_t>(VERTICES.size()), 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1092,6 +1209,29 @@ std::vector<char> VulkanApp::ReadFile(const std::string& filename)
     return buffer;
 }
 
+void VulkanApp::UpdateUniformBuffer(const uint32_t currentImage) const
+{
+    // Some logic to calculate the time in seconds since rendering has started with floating point accuracy
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    const auto currentTime = std::chrono::high_resolution_clock::now();
+    const float time = std::chrono::duration<float>(currentTime - startTime).count();
+
+    // We will now define the model, view and projection transformations in the uniform buffer object
+    UniformBufferObject ubo;
+    ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+
+    // GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted.
+    // The easiest way to compensate for that is to flip the sign on the scaling factor of the Y axis in the projection matrix.
+    // If you don’t do this, then the image will be rendered upside down
+    ubo.proj[1][1] *= -1;
+
+    // All of the transformations are defined now, so we can copy the data in the uniform buffer object to the current uniform buffer
+    memcpy(vkUniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+}
+
 void VulkanApp::DrawFrame()
 {
     // At a high level, rendering a frame in Vulkan consists of a common set of steps:
@@ -1100,18 +1240,21 @@ void VulkanApp::DrawFrame()
     
     //  2. Acquire an image from the swakop chain
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(vkDevice, vkSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    const VkResult result = vkAcquireNextImageKHR(vkDevice, vkSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         ReCreateSwapChain();
         return;
     }
-    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
+    UpdateUniformBuffer(currentFrame);
+    
     // We only reset the fence if we can do work
     // After waiting, we need to manually reset the fence to the unsignaled state with the vkResetFences
     vkResetFences(vkDevice, 1, &inFlightFences[currentFrame]);
@@ -1206,6 +1349,18 @@ void VulkanApp::Cleanup() const
 {
     CleanupSwapChain();
 
+    vkDestroyDescriptorSetLayout(vkDevice, vkDescriptorSetLayout, nullptr);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        vkDestroyBuffer(vkDevice, vkUniformBuffers[i], nullptr);
+        vkFreeMemory(vkDevice, vkUniformBuffersMemory[i], nullptr);
+    }
+
+    vkDestroyDescriptorPool(vkDevice, vkDescriptorPool, nullptr);
+
+    vkDestroyDescriptorSetLayout(vkDevice, vkDescriptorSetLayout, nullptr);
+    
     vkDestroyBuffer(vkDevice, vkIndexBuffer, nullptr);
     vkFreeMemory(vkDevice, vkIndexBufferMemory, nullptr);
     
