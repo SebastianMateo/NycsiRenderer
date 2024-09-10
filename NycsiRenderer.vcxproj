@@ -593,6 +593,7 @@
     <ClInclude Include="external\include\glm\vec3.hpp" />
     <ClInclude Include="external\include\glm\vec4.hpp" />
     <ClInclude Include="external\include\glm\vector_relational.hpp" />
+    <ClInclude Include="external\include\stb_image.h" />
     <ClInclude Include="external\include\vulkan\utility\vk_concurrent_unordered_map.hpp" />
     <ClInclude Include="external\include\vulkan\utility\vk_format_utils.h" />
     <ClInclude Include="external\include\vulkan\utility\vk_safe_struct.hpp" />
@@ -644,6 +645,9 @@
     <Content Include="external\lib\vulkan-1.lib" />
     <Content Include="shaders\shader.frag" />
     <Content Include="shaders\shader.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="textures\" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

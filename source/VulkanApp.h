@@ -35,6 +35,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription GetBindingDescription()
     {
@@ -47,9 +48,9 @@ struct Vertex
     }
 
     // Describes how to extract a vertex attribute from a chunk of vertex data originating from a binding description
-    static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions()
+    static std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescriptions()
     {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
         // Position
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -60,7 +61,11 @@ struct Vertex
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
-        
+        // Texture
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
         return attributeDescriptions;
     }
 };
@@ -122,6 +127,12 @@ private:
     VkDescriptorPool vkDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> vkDescriptorSets;
 
+    // Texture
+    VkImage vkTextureImage;
+    VkDeviceMemory vkTextureImageMemory;
+    VkImageView vkTextureImageView;
+    VkSampler vkTextureSampler;
+
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
     bool IsDeviceSuitable(VkPhysicalDevice_T* device) const;
@@ -143,7 +154,7 @@ private:
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
     // Creation Methods
-    void InitWindow();    
+    void InitWindow();
     void InitVulkan();
     void CreateInstance();
     void SelectPhysicalDevice();
@@ -151,6 +162,7 @@ private:
     void CreateSurface();
     void CreateSwapChain();
     void ReCreateSwapChain();
+    VkImageView CreateImageView(VkImage image, VkFormat format) const;
     void CreateImageViews();
     void CreateDescriptorSetLayout();
     void CreateGraphicsPipeline();
@@ -161,9 +173,21 @@ private:
     void CreateFramebuffers();
     void CreateCommandPool();
 
-    // Buffer Creation
+    // Textures
+    void CreateTextureImage();
+    void CreateTextureImageView();
+    void CreateTextureSampler();
+    void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+                     VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) const;
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
+    
+    // Buffers
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const;
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) const;
+    VkCommandBuffer BeginSingleTimeCommands() const;
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+    
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
