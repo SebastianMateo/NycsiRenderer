@@ -159,7 +159,7 @@ private:
     std::vector<VkDescriptorSet> vkDescriptorSets;
 
     // Texture
-    uint32_t mipLevels = 1;
+    uint32_t vkMipLevels = 1;
     VkImage vkTextureImage;
     VkDeviceMemory vkTextureImageMemory;
     VkImageView vkTextureImageView;
@@ -169,7 +169,13 @@ private:
     VkImage vkDepthImage;
     VkDeviceMemory vkDepthImageMemory;
     VkImageView vkDepthImageView;
-    
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Multisampling
+    VkImage vkColorImage;
+    VkDeviceMemory vkColorImageMemory;
+    VkImageView vkColorImageView;
+
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
     bool IsDeviceSuitable(VkPhysicalDevice_T* device) const;
@@ -196,6 +202,8 @@ private:
     void CreateInstance();
     void SelectPhysicalDevice();
     void CreateLogicalDevice();
+    VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+    
     void CreateSurface();
     void CreateSwapChain();
     void ReCreateSwapChain();
@@ -215,10 +223,12 @@ private:
     void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) const;
     void CreateTextureImageView();
     void CreateTextureSampler();
-    void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+    void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
                      VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) const;
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
+    
+    void CreateColorResources();
     
     // Buffers
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) const;
