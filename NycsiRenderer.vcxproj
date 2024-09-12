@@ -643,6 +643,7 @@
     <Content Include="external\include\glm\copying.txt" />
     <Content Include="external\lib\glfw3.lib" />
     <Content Include="external\lib\vulkan-1.lib" />
+    <Content Include="models\viking_room.obj" />
     <Content Include="shaders\shader.frag" />
     <Content Include="shaders\shader.vert" />
   </ItemGroup>

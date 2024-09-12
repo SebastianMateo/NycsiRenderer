@@ -11,6 +11,15 @@
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
+constexpr uint32_t WIDTH = 800;
+constexpr uint32_t HEIGHT = 600;
+
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
+
 // It’s actually possible that the queue families supporting drawing commands
 // and the ones supporting presentation do not overlap.
 struct QueueFamilyIndices
@@ -33,10 +42,14 @@ struct SwapChainSupportDetails
 
 struct Vertex
 {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
+    bool operator==(const Vertex& other) const {
+        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+    }
+    
     static VkVertexInputBindingDescription GetBindingDescription()
     {
         VkVertexInputBindingDescription bindingDescription;
@@ -54,7 +67,7 @@ struct Vertex
         // Position
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(Vertex, pos);
         // Color
         attributeDescriptions[1].binding = 0;
@@ -70,12 +83,30 @@ struct Vertex
     }
 };
 
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                   (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+                   (hash<glm::vec2>()(vertex.texCoord) << 1);
+        }
+    };
+}
+
+
 class VulkanApp
 {
 public:
     void Run();
 
 private:
+    // Model
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+
+    // Render Specific
     const int MAX_FRAMES_IN_FLIGHT = 2;
     uint32_t currentFrame = 0;
     bool framebufferResized = false;
@@ -133,6 +164,11 @@ private:
     VkImageView vkTextureImageView;
     VkSampler vkTextureSampler;
 
+    // Depth Buffer
+    VkImage vkDepthImage;
+    VkDeviceMemory vkDepthImageMemory;
+    VkImageView vkDepthImageView;
+    
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
     bool IsDeviceSuitable(VkPhysicalDevice_T* device) const;
@@ -162,7 +198,7 @@ private:
     void CreateSurface();
     void CreateSwapChain();
     void ReCreateSwapChain();
-    VkImageView CreateImageView(VkImage image, VkFormat format) const;
+    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) const;
     void CreateImageViews();
     void CreateDescriptorSetLayout();
     void CreateGraphicsPipeline();
@@ -187,7 +223,8 @@ private:
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) const;
     VkCommandBuffer BeginSingleTimeCommands() const;
     void EndSingleTimeCommands(VkCommandBuffer commandBuffer) const;
-    
+
+    void LoadModel();
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
@@ -199,6 +236,12 @@ private:
     void CreateSyncObjects();
     static std::vector<char> ReadFile(const std::string& filename);
     void UpdateUniformBuffer(uint32_t currentImage) const;
+    
+    // Depth Buffer
+    static bool HasStencilComponent(VkFormat format);
+    VkFormat FindDepthFormat() const;
+    VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const;
+    void CreateDepthResources();
     
     void DrawFrame();
     void MainLoop();
