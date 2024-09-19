@@ -162,6 +162,7 @@
     <ClCompile Include="external\include\glm\glm.cppm" />
     <ClCompile Include="external\include\vulkan\vulkan.cppm" />
     <ClCompile Include="NycsiRenderer.cpp" />
+    <ClCompile Include="source\renderer\VPhysicalDevice.cpp" />
     <ClCompile Include="source\VulkanApp.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -636,6 +637,7 @@
     <ClInclude Include="external\include\vulkan\vulkan_xcb.h" />
     <ClInclude Include="external\include\vulkan\vulkan_xlib.h" />
     <ClInclude Include="external\include\vulkan\vulkan_xlib_xrandr.h" />
+    <ClInclude Include="source\renderer\VPhysicalDevice.h" />
     <ClInclude Include="source\VulkanApp.h" />
   </ItemGroup>
   <ItemGroup>

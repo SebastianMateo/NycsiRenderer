@@ -14,31 +14,13 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
+#include "renderer/VPhysicalDevice.h"
+
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
-
-// It’s actually possible that the queue families supporting drawing commands
-// and the ones supporting presentation do not overlap.
-struct QueueFamilyIndices
-{
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    [[nodiscard]] bool IsComplete() const
-    {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
-
-struct SwapChainSupportDetails
-{
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
-};
 
 struct Vertex
 {
@@ -116,9 +98,8 @@ private:
     VkInstance vkInstance = nullptr;
     VkDebugUtilsMessengerEXT debugMessenger = nullptr;
 
-    // Set in SelectPhysicalDevice
-    VkPhysicalDevice vkPhysicalDevice = VK_NULL_HANDLE;
-
+    VPhysicalDevice mPhysicalDevice;
+    
     // Set in CreateLogicalDevice
     VkDevice vkDevice = VK_NULL_HANDLE;
     VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
@@ -178,16 +159,6 @@ private:
 
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
-    bool IsDeviceSuitable(VkPhysicalDevice_T* device) const;
-    QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) const;
-    static bool CheckDeviceExtensionSupport(VkPhysicalDevice_T* device);
-
-    // Checking if a swap chain is available is not sufficient, because it may not actually be compatible with our window surface.
-    // We need to know
-    //  * Basic surface capabilities (min/max number of images in swap chain, min/max width and height of images)
-    //  * Surface formats (pixel format, color space)
-    //  * Available presentation modes
-    SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) const;
     // Choosing the right settings for the Swap Chain
     static VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     // Represents the actual conditions for showing images to the screen
@@ -200,9 +171,7 @@ private:
     void InitWindow();
     void InitVulkan();
     void CreateInstance();
-    void SelectPhysicalDevice();
     void CreateLogicalDevice();
-    VkSampleCountFlagBits GetMaxUsableSampleCount() const;
     
     void CreateSurface();
     void CreateSwapChain();
