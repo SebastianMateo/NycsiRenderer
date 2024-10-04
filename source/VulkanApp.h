@@ -14,8 +14,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
-#include "renderer/VPhysicalDevice.h"
-
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
@@ -95,10 +93,10 @@ private:
     
     GLFWwindow* window = nullptr;
 
-    VkInstance vkInstance = nullptr;
+    VkInstance mVkInstance = nullptr;
     VkDebugUtilsMessengerEXT debugMessenger = nullptr;
 
-    VPhysicalDevice mPhysicalDevice;
+    VkPhysicalDevice mVkPhysicalDevice = VK_NULL_HANDLE;
     
     // Set in CreateLogicalDevice
     VkDevice vkDevice = VK_NULL_HANDLE;
@@ -111,7 +109,7 @@ private:
     VkExtent2D swapChainExtent = {};
     std::vector<VkImageView> swapChainImageViews;
     
-    VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+    VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
     VkRenderPass vkRenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE; 
     VkPipelineLayout vkPipelineLayout = VK_NULL_HANDLE;
@@ -171,7 +169,6 @@ private:
     void InitWindow();
     void InitVulkan();
     void CreateInstance();
-    void CreateLogicalDevice();
     
     void CreateSurface();
     void CreateSwapChain();

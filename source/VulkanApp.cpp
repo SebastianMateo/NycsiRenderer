@@ -23,10 +23,12 @@
 #include <stb_image.h>
 #include <unordered_map>
 
+#include "renderer/VLogicalDevice.hpp"
+#include "renderer/VPhysicalDevice.hpp"
+#include "renderer/VPods.hpp"
 #include "vulkan/vulkan_raii.hpp"
 
-// Which validation layer we want to use
-const std::vector VALIDATION_LAYERS = { "VK_LAYER_KHRONOS_validation" };
+using namespace Renderer;
 
 struct UniformBufferObject
 {
@@ -34,12 +36,6 @@ struct UniformBufferObject
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 };
-
-#ifdef NDEBUG
-    const bool enableValidationLayers = false;
-#else
-    const bool enableValidationLayers = true;
-#endif
 
 // Calbacks
 VkResult CreateDebugUtilsMessengerExt(const VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
@@ -77,11 +73,10 @@ std::vector<const char*> VulkanApp::GetRequiredExtensions()
 
     std::vector extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-    if (enableValidationLayers)
-    {
+    #ifdef _DEBUG
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
+    #endif
+    
     return extensions;
 }
 
@@ -143,7 +138,7 @@ VkExtent2D VulkanApp::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilit
 uint32_t VulkanApp::FindMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties) const
 {
     VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(mPhysicalDevice.Get(), &memProperties);
+    vkGetPhysicalDeviceMemoryProperties(mVkPhysicalDevice, &memProperties);
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
     {
@@ -172,19 +167,27 @@ void VulkanApp::InitWindow()
 void VulkanApp::InitVulkan()
 {
     CreateInstance();
-    SetupDebugMessenger();
 
+    #ifdef _DEBUG
+        SetupDebugMessenger();
+    #endif
+    
     // Since Vulkan is a platform agnostic API, it can not interface directly with the window system on its own
     // The window surface needs to be created right after the instance creation, because it can actually
     // influence the physical device selection
     CreateSurface();
 
     // Create the Physical Device Class
-    mPhysicalDevice = VPhysicalDevice { vkInstance, vkSurface};
-    msaaSamples = mPhysicalDevice.GetMaxUsableSampleCount();
+    mVkPhysicalDevice = VPhysicalDevice::CreatePhysicalDevice(mVkInstance, mVkSurface);
+    msaaSamples = VPhysicalDevice::GetMaxUsableSampleCount(mVkPhysicalDevice);
 
     // After selecting a physical device to use we need to set up a logical device to interface with i
-    CreateLogicalDevice();
+    vkDevice = VLogicalDevice::CreateLogicalDevice(mVkPhysicalDevice, mVkSurface);
+    
+    // The queues were already created, just get them...
+    auto [graphicsFamily, presentFamily] = VPhysicalDevice::FindQueueFamilies(mVkPhysicalDevice, mVkSurface);
+    vkGetDeviceQueue(vkDevice, graphicsFamily.value(), 0, &vkGraphicsQueue);
+    vkGetDeviceQueue(vkDevice, presentFamily.value(), 0, &vkPresentQueue);
 
     // Now we create the Swap Chain
     CreateSwapChain();
@@ -224,12 +227,14 @@ void VulkanApp::InitVulkan()
 
 void VulkanApp::CreateInstance()
 {
-    // If we want to enableValidationLayers, check if we have them
-    if (enableValidationLayers && !CheckValidationLayerSupport())
+    // In debug, check for validation layers
+    #ifdef _DEBUG
+    if (!CheckValidationLayerSupport())
     {
         std::cout << "ERROR: Validation layers requested, but not available!" << '\n';
         return;
     }
+    #endif
     
     // Optional: We fill some info about our application.
     VkApplicationInfo appInfo{};
@@ -252,89 +257,27 @@ void VulkanApp::CreateInstance()
 
     // Validation Layers
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (enableValidationLayers)
-    {
+    #ifdef _DEBUG
         createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
         createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
 
         PopulateDebugMessengerCreateInfo(debugCreateInfo);
         createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
-    }
-    else
-    {
+    #elif
         createInfo.enabledLayerCount = 0;
         createInfo.pNext = nullptr;
-    }
+    #endif
     
     // Now we specified everything we need, we can create the Vulkan Instance
-    if (vkCreateInstance(&createInfo, nullptr, &vkInstance) != VK_SUCCESS)
+    if (vkCreateInstance(&createInfo, nullptr, &mVkInstance) != VK_SUCCESS)
     {
         std::cout << "Error Create Vulkan Instance" << '\n';
     }
 }
 
-void VulkanApp::CreateLogicalDevice()
-{
-    // We get our queue families we are going to use
-    QueueFamilyIndices indices = mPhysicalDevice.FindQueueFamilies();
-    std::set uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
-    
-    // And create a Queue for each family
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies)
-    {
-        // Describes the number of queues we want for a single queue family
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority; // Between 0.0 and 1.0
-        queueCreateInfos.push_back(queueCreateInfo);
-    }
-
-    // Specify device features we will be using
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-    
-    // Now with all this data, we can create the vkDevice
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    // Add pointers to the queue creation info and device features structs
-    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.pEnabledFeatures = &deviceFeatures;
-    // Support for extensions in logical device
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(DEVICE_EXTENSIONS.size());
-    createInfo.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data();
-
-    // Previous implementations of Vulkan made a distinction between instance and device specific validation layers
-    // That means that the enabledLayerCount and ppEnabledLayerNames fields of VkDeviceCreateInfo are ignored by
-    // up-to-date implementations. However, we set them anyway
-    if (enableValidationLayers)
-    {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
-        createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
-    }
-    else
-    {
-        createInfo.enabledLayerCount = 0;
-    }
-
-    // We’re now ready to instantiate the logical device 
-    if (vkCreateDevice(mPhysicalDevice.Get(), &createInfo, nullptr, &vkDevice) != VK_SUCCESS)
-    {
-        std::cout << "failed to create logical device!" << '\n';
-    }
-
-    // The queues are automatically created along with the logical device
-    vkGetDeviceQueue(vkDevice, indices.graphicsFamily.value(), 0, &vkGraphicsQueue);
-    vkGetDeviceQueue(vkDevice, indices.presentFamily.value(), 0, &vkPresentQueue);
-}
-
 void VulkanApp::CreateSurface()
 {
-    if (glfwCreateWindowSurface(vkInstance, window, nullptr, &vkSurface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(mVkInstance, window, nullptr, &mVkSurface) != VK_SUCCESS)
     {
         std::cout << "failed to create window surface!" << '\n';
     }
@@ -342,8 +285,8 @@ void VulkanApp::CreateSurface()
 
 void VulkanApp::CreateSwapChain()
 {
-    const SwapChainSupportDetails swapChainSupport = mPhysicalDevice.QuerySwapChainSupport();
-
+    const SwapChainSupportDetails swapChainSupport = VPhysicalDevice::QuerySwapChainSupport(mVkPhysicalDevice, mVkSurface);
+    
     const VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
     const VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
     const VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
@@ -366,7 +309,7 @@ void VulkanApp::CreateSwapChain()
     // As per usual, we fill a struct
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = vkSurface;
+    createInfo.surface = mVkSurface;
     createInfo.minImageCount = imageCount;
     createInfo.imageFormat = surfaceFormat.format;
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -375,7 +318,7 @@ void VulkanApp::CreateSwapChain()
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
 
-    const QueueFamilyIndices indices = mPhysicalDevice.FindQueueFamilies();
+    const QueueFamilyIndices indices = VPhysicalDevice::FindQueueFamilies(mVkPhysicalDevice, mVkSurface);
     const uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
     // Next, we need to specify how to handle swap chain images that will be used across multiple queue families
@@ -797,7 +740,7 @@ void VulkanApp::CreateFramebuffers()
 
 void VulkanApp::CreateCommandPool()
 {
-    const QueueFamilyIndices queueFamilyIndices = mPhysicalDevice.FindQueueFamilies();
+    const QueueFamilyIndices queueFamilyIndices = VPhysicalDevice::FindQueueFamilies(mVkPhysicalDevice, mVkSurface);
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -857,7 +800,7 @@ void VulkanApp::GenerateMipmaps(const VkImage image, const VkFormat imageFormat,
 {
         // Check if image format supports linear blitting
         VkFormatProperties formatProperties;
-        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice.Get(), imageFormat, &formatProperties);
+        vkGetPhysicalDeviceFormatProperties(mVkPhysicalDevice, imageFormat, &formatProperties);
 
         if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
         {
@@ -964,7 +907,7 @@ void VulkanApp::CreateTextureSampler()
     //  The maxAnisotropy field limits the amount of texel samples that can be used to calculate the final color
     //  We need to query it from physical device
     VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(mPhysicalDevice.Get(), &properties); // TODO move to a method
+    vkGetPhysicalDeviceProperties(mVkPhysicalDevice, &properties); // TODO move to a method
     samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
 
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -1560,7 +1503,7 @@ VkFormat VulkanApp::FindSupportedFormat(const std::vector<VkFormat>& candidates,
     for (const VkFormat format : candidates)
     {
         VkFormatProperties props;
-        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice.Get(), format, &props); // TODO Move to Physical Device
+        vkGetPhysicalDeviceFormatProperties(mVkPhysicalDevice, format, &props); // TODO Move to Physical Device
 
         if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
             return format;
@@ -1741,13 +1684,13 @@ void VulkanApp::Cleanup() const
     vkDestroyRenderPass(vkDevice, vkRenderPass, nullptr);
     vkDestroyDevice(vkDevice, nullptr);
 
-    if (enableValidationLayers)
-    {
-        DestroyDebugUtilsMessengerExt(vkInstance, debugMessenger, nullptr);
-    }
+    #ifdef _DEBUG
+        DestroyDebugUtilsMessengerExt(mVkInstance, debugMessenger, nullptr);
+    #endif
+    
 
-    vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
-    vkDestroyInstance(vkInstance, nullptr);
+    vkDestroySurfaceKHR(mVkInstance, mVkSurface, nullptr);
+    vkDestroyInstance(mVkInstance, nullptr);
 
     glfwDestroyWindow(window);
 
@@ -1768,12 +1711,10 @@ void VulkanApp::PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfo
 
 void VulkanApp::SetupDebugMessenger()
 {
-    if constexpr (!enableValidationLayers) return;
-
     VkDebugUtilsMessengerCreateInfoEXT createInfo;
     PopulateDebugMessengerCreateInfo(createInfo);
 
-    if (CreateDebugUtilsMessengerExt(vkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
+    if (CreateDebugUtilsMessengerExt(mVkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to set up debug messenger!");
     }
