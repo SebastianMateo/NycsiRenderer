@@ -1,19 +1,11 @@
 ﻿#pragma once
 
 #define GLFW_INCLUDE_VULKAN
-#include <array>
-#include <optional>
 #include <vector>
 #include <xstring>
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan.h>
 
-#include "glm/vec2.hpp"
-#include "glm/vec3.hpp"
-
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
-
+#include "renderer/VPods.hpp"
 #include "renderer/VSwapChain.hpp"
 
 constexpr uint32_t WIDTH = 800;
@@ -22,60 +14,6 @@ constexpr uint32_t HEIGHT = 600;
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
 
-struct Vertex
-{
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-
-    bool operator==(const Vertex& other) const {
-        return pos == other.pos && color == other.color && texCoord == other.texCoord;
-    }
-    
-    static VkVertexInputBindingDescription GetBindingDescription()
-    {
-        VkVertexInputBindingDescription bindingDescription;
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        
-        return bindingDescription;
-    }
-
-    // Describes how to extract a vertex attribute from a chunk of vertex data originating from a binding description
-    static std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescriptions()
-    {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-        // Position
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        // Color
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-        // Texture
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-        return attributeDescriptions;
-    }
-};
-
-namespace std {
-    template<> struct hash<Vertex> {
-        size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^
-                   (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-                   (hash<glm::vec2>()(vertex.texCoord) << 1);
-        }
-    };
-}
-
-
 class VulkanApp
 {
 public:
@@ -83,20 +21,20 @@ public:
 
 private:
     // Model
-    std::vector<Vertex> vertices;
+    std::vector<Renderer::Vertex> vertices;
     std::vector<uint32_t> indices;
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
+    VkBuffer vertexBuffer = nullptr;
+    VkDeviceMemory vertexBufferMemory = nullptr;
 
     // Render Specific
-    const int MAX_FRAMES_IN_FLIGHT = 2;
+    const int maxFramesInFlight = 2;
     uint32_t currentFrame = 0;
     bool framebufferResized = false;
     
     GLFWwindow* mGlfwWindow = nullptr;
 
-    VkInstance mVkInstance = nullptr;
-    VkDebugUtilsMessengerEXT debugMessenger = nullptr;
+    VkInstance mVkInstance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
 
     VkPhysicalDevice mVkPhysicalDevice = VK_NULL_HANDLE;
     
@@ -106,7 +44,6 @@ private:
     VkQueue vkPresentQueue = VK_NULL_HANDLE;
 
     Renderer::VSwapChain::VSwapChain mVSwapChain;
-    std::vector<VkImageView> swapChainImageViews;
     
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
     VkRenderPass vkRenderPass = VK_NULL_HANDLE;
@@ -138,30 +75,24 @@ private:
 
     // Texture
     uint32_t vkMipLevels = 1;
-    VkImage vkTextureImage;
-    VkDeviceMemory vkTextureImageMemory;
-    VkImageView vkTextureImageView;
-    VkSampler vkTextureSampler;
+    VkImage vkTextureImage = VK_NULL_HANDLE;
+    VkDeviceMemory vkTextureImageMemory = VK_NULL_HANDLE;
+    VkImageView vkTextureImageView = VK_NULL_HANDLE;
+    VkSampler vkTextureSampler = VK_NULL_HANDLE;
 
     // Depth Buffer
-    VkImage vkDepthImage;
-    VkDeviceMemory vkDepthImageMemory;
-    VkImageView vkDepthImageView;
+    VkImage vkDepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory vkDepthImageMemory = VK_NULL_HANDLE;
+    VkImageView vkDepthImageView = VK_NULL_HANDLE;
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
     // Multisampling
-    VkImage vkColorImage;
-    VkDeviceMemory vkColorImageMemory;
-    VkImageView vkColorImageView;
+    VkImage vkColorImage = VK_NULL_HANDLE;
+    VkDeviceMemory vkColorImageMemory = VK_NULL_HANDLE;
+    VkImageView vkColorImageView = VK_NULL_HANDLE;
 
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
-    // Choosing the right settings for the Swap Chain
-    static VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-    // Represents the actual conditions for showing images to the screen
-    static VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-    // The swap extent is the resolution of the swap chain images
-    VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
     // Creation Methods
@@ -170,13 +101,10 @@ private:
     void CreateInstance();
     
     void CreateSurface();
-    void CreateSwapChain();
     void ReCreateSwapChain();
-    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-    void CreateImageViews();
     void CreateDescriptorSetLayout();
     void CreateGraphicsPipeline();
-    [[nodiscard]] VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
+    VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
     void CreateRenderPass();
 
     // Drawing
@@ -222,8 +150,7 @@ private:
     
     void DrawFrame();
     void MainLoop();
-
-    void CleanupSwapChain() const;
+    
     void Cleanup() const;
     static void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
     void SetupDebugMessenger();

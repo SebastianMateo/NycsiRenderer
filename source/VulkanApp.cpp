@@ -6,18 +6,13 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <limits> // Necessary for std::numeric_limits
-#include <set>
 #include <vector>
-#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -140,7 +135,6 @@ void VulkanApp::InitVulkan()
     // An image view is quite literally a view into an image. It describes how to access the image and which
     // part of the image to access, for example if it should be treated as a 2D texture depth texture without any mipmapping levels
     
-    CreateImageViews();
     // We need to tell Vulkan about the framebuffer attachments that will be used while rendering.
     // We need to specify how many color and depth buffers there will be, how many samples to use
     // for each of them and how their contents should be handled throughout the rendering operations
@@ -229,11 +223,6 @@ void VulkanApp::CreateSurface()
     }
 }
 
-void VulkanApp::CreateSwapChain()
-{
-    
-}
-
 void VulkanApp::ReCreateSwapChain()
 {
     // Handle Minimize
@@ -248,50 +237,12 @@ void VulkanApp::ReCreateSwapChain()
     // We need to wait as we can't use devices still in use
     vkDeviceWaitIdle(vkDevice);
 
-    CleanupSwapChain();
+    VSwapChain::CleanupSwapChain(vkDevice, vkColorImageView, vkColorImage, vkColorImageMemory, mVSwapChain, swapChainFramebuffers);
     
-    CreateSwapChain();
-    CreateImageViews();
+    mVSwapChain = VSwapChain::CreateSwapChain(mVkPhysicalDevice, mVkSurface, vkDevice,  mGlfwWindow);
     CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
-}
-
-VkImageView VulkanApp::CreateImageView(const VkImage image, const VkFormat format, const VkImageAspectFlags aspectFlags, const uint32_t mipLevels) const
-{
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image;
-    
-    // The viewType and format fields specify how the image data should be interpreted.
-    // The viewType parameter allows you to treat images as 1D textures, 2D textures, 3D textures and cube maps
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = format;
-    
-    // The subresourceRange field describes what the image’s purpose is and which part of the image should be accessed.
-    viewInfo.subresourceRange.aspectMask = aspectFlags; //VK_IMAGE_ASPECT_DEPTH_BIT or VK_IMAGE_ASPECT_COLOR_BIT for example
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = mipLevels;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
-
-    VkImageView imageView;
-    if (vkCreateImageView(vkDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create image view!");
-    }
-
-    return imageView;
-}
-
-void VulkanApp::CreateImageViews()
-{
-    swapChainImageViews.resize(mVSwapChain.swapChainImages.size());
-
-    for (size_t i = 0; i < mVSwapChain.swapChainImages.size(); i++)
-    {
-        swapChainImageViews[i] = CreateImageView(mVSwapChain.swapChainImages[i], mVSwapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-    }
 }
 
 void VulkanApp::CreateDescriptorSetLayout()
@@ -588,15 +539,15 @@ void VulkanApp::CreateRenderPass()
 
 void VulkanApp::CreateFramebuffers()
 {
-    swapChainFramebuffers.resize(swapChainImageViews.size());
+    swapChainFramebuffers.resize(mVSwapChain.swapChainImageViews.size());
 
     // We’ll then iterate through the image views and create framebuffers from them:
-    for (size_t i = 0; i < swapChainImageViews.size(); i++)
+    for (size_t i = 0; i < mVSwapChain.swapChainImageViews.size(); i++)
     {
         std::array<VkImageView, 3> attachments = {
             vkColorImageView,
             vkDepthImageView,
-            swapChainImageViews[i],
+            mVSwapChain.swapChainImageViews[i],
         };
 
         VkFramebufferCreateInfo framebufferInfo{};
@@ -655,7 +606,7 @@ void VulkanApp::CreateTextureImage()
     // We can then directly copy the pixel values that we got from the image loading library to the buffer
     void* data;
     vkMapMemory(vkDevice, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    memcpy(data, pixels, imageSize);
     vkUnmapMemory(vkDevice, stagingBufferMemory);
 
     stbi_image_free(pixels);
@@ -764,7 +715,7 @@ void VulkanApp::GenerateMipmaps(const VkImage image, const VkFormat imageFormat,
 
 void VulkanApp::CreateTextureImageView()
 {
-    vkTextureImageView = CreateImageView(vkTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, vkMipLevels); 
+    vkTextureImageView = VSwapChain::CreateImageView(vkDevice, vkTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, vkMipLevels); 
 }
 
 void VulkanApp::CreateTextureSampler()
@@ -1066,7 +1017,7 @@ void VulkanApp::CreateColorResources()
     CreateImage(mVSwapChain.swapChainExtent.width, mVSwapChain.swapChainExtent.height, 1, msaaSamples, colorFormat,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkColorImage, vkColorImageMemory);
-    vkColorImageView = CreateImageView(vkColorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    vkColorImageView = VSwapChain::CreateImageView(vkDevice, vkColorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
 void VulkanApp::CreateIndexBuffer()
@@ -1099,11 +1050,11 @@ void VulkanApp::CreateUniformBuffers()
 {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    vkUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    vkUniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    vkUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+    vkUniformBuffers.resize(maxFramesInFlight);
+    vkUniformBuffersMemory.resize(maxFramesInFlight);
+    vkUniformBuffersMapped.resize(maxFramesInFlight);
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < maxFramesInFlight; i++) {
         CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vkUniformBuffers[i], vkUniformBuffersMemory[i]);
 
         // We map the buffer right after creation using vkMapMemory to get a pointer to which we can write the data later on
@@ -1116,20 +1067,20 @@ void VulkanApp::CreateDescriptorPool()
     // We first need to describe which descriptor types our descriptor sets are going to contain and how many of them
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(maxFramesInFlight);
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(maxFramesInFlight);
     
     // We will allocate one of these descriptors for every frame
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolInfo.maxSets = static_cast<uint32_t>(maxFramesInFlight);
 
     // Aside from the maximum number of individual descriptors that are available,
     // we also need to specify the maximum number of descriptor sets that may be allocated:
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolInfo.maxSets = static_cast<uint32_t>(maxFramesInFlight);
 
     if (vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &vkDescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
@@ -1139,23 +1090,23 @@ void VulkanApp::CreateDescriptorPool()
 void VulkanApp::CreateDescriptorSets()
 {
     // A descriptor set allocation is described with a VkDescriptorSetAllocateInfo struct
-    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, vkDescriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, vkDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = vkDescriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(maxFramesInFlight);
     allocInfo.pSetLayouts = layouts.data();
 
     // In our case we will create one descriptor set for each frame in flight, all with the same layout.
     // Unfortunately we do need all the copies of the layout because the next function expects an array matching the number of sets.
-    vkDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    vkDescriptorSets.resize(maxFramesInFlight);
     if (vkAllocateDescriptorSets(vkDevice, &allocInfo, vkDescriptorSets.data()) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
     // The descriptor sets have been allocated now, but the descriptors within still need to be configured. 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < maxFramesInFlight; i++) {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = vkUniformBuffers[i];
         bufferInfo.offset = 0;
@@ -1216,7 +1167,7 @@ void VulkanApp::CreateVertexBuffer()
 
 void VulkanApp::CreateCommandBuffers()
 {
-    vkCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    vkCommandBuffers.resize(maxFramesInFlight);
     
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1297,9 +1248,9 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
 
 void VulkanApp::CreateSyncObjects()
 {
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    imageAvailableSemaphores.resize(maxFramesInFlight);
+    renderFinishedSemaphores.resize(maxFramesInFlight);
+    inFlightFences.resize(maxFramesInFlight);
     
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1308,7 +1259,7 @@ void VulkanApp::CreateSyncObjects()
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // So the first frame doesn't need to wait
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    for (size_t i = 0; i < maxFramesInFlight; i++)
     {
         if (vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
             vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
@@ -1400,7 +1351,7 @@ void VulkanApp::CreateDepthResources()
     CreateImage(mVSwapChain.swapChainExtent.width, mVSwapChain.swapChainExtent.height, 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkDepthImage,
                 vkDepthImageMemory);
-    vkDepthImageView = CreateImageView(vkDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    vkDepthImageView = VSwapChain::CreateImageView(vkDevice, vkDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
 void VulkanApp::DrawFrame()
@@ -1487,7 +1438,7 @@ void VulkanApp::DrawFrame()
         throw std::runtime_error("failed to present swap chain image!");
     }
     
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    currentFrame = (currentFrame + 1) % maxFramesInFlight;
 }
 
 void VulkanApp::MainLoop()
@@ -1501,28 +1452,11 @@ void VulkanApp::MainLoop()
     vkDeviceWaitIdle(vkDevice);
 }
 
-void VulkanApp::CleanupSwapChain() const
-{
-    vkDestroyImageView(vkDevice, vkColorImageView, nullptr);
-    vkDestroyImage(vkDevice, vkColorImage, nullptr);
-    vkFreeMemory(vkDevice, vkColorImageMemory, nullptr);
-    
-    for (const VkFramebuffer framebuffer : swapChainFramebuffers)
-    {
-        vkDestroyFramebuffer(vkDevice, framebuffer, nullptr);
-    }
 
-    for (const VkImageView imageView : swapChainImageViews)
-    {
-        vkDestroyImageView(vkDevice, imageView, nullptr);
-    }
-
-    vkDestroySwapchainKHR(vkDevice, mVSwapChain.vkSwapChain, nullptr);
-}
 
 void VulkanApp::Cleanup() const
 {
-    CleanupSwapChain();
+    VSwapChain::CleanupSwapChain(vkDevice, vkColorImageView, vkColorImage, vkColorImageMemory, mVSwapChain, swapChainFramebuffers);
 
     // Cleanup Textures
     vkDestroySampler(vkDevice, vkTextureSampler, nullptr);
@@ -1533,7 +1467,7 @@ void VulkanApp::Cleanup() const
     
     vkDestroyDescriptorSetLayout(vkDevice, vkDescriptorSetLayout, nullptr);
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    for (size_t i = 0; i < maxFramesInFlight; i++)
     {
         vkDestroyBuffer(vkDevice, vkUniformBuffers[i], nullptr);
         vkFreeMemory(vkDevice, vkUniformBuffersMemory[i], nullptr);
@@ -1550,7 +1484,7 @@ void VulkanApp::Cleanup() const
     vkFreeMemory(vkDevice, vkVertexBufferMemory, nullptr);
     
     // Clean all Sync Objects
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    for (size_t i = 0; i < maxFramesInFlight; i++)
     {
         vkDestroySemaphore(vkDevice, imageAvailableSemaphores[i], nullptr);
         vkDestroySemaphore(vkDevice, renderFinishedSemaphores[i], nullptr);
