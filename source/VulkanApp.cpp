@@ -26,6 +26,7 @@
 #include "renderer/VLogicalDevice.hpp"
 #include "renderer/VPhysicalDevice.hpp"
 #include "renderer/VPods.hpp"
+#include "renderer/VSwapChain.hpp"
 #include "vulkan/vulkan_raii.hpp"
 
 using namespace Renderer;
@@ -80,61 +81,6 @@ std::vector<const char*> VulkanApp::GetRequiredExtensions()
     return extensions;
 }
 
-VkSurfaceFormatKHR VulkanApp::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
-{
-    // Each VkSurfaceFormatKHR entry contains a format and a colorSpace member
-    // VK_FORMAT_B8G8R8A8_SRGB means that we store the B, G, R and alpha channels
-    // in that order with an 8 bit unsigned integer for a total of 32 bits per pixel
-
-    // For the color space we’ll use sRGB, which is pretty much the standard color space for viewing and printing purposes
-    for (const auto& availableFormat : availableFormats)
-    {
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-        {
-            return availableFormat;
-        }
-    }
-    return availableFormats[0];
-}
-
-VkPresentModeKHR VulkanApp::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
-{
-    for (const auto& availablePresentMode : availablePresentModes)
-    {
-        //  This mode can be used to render frames as fast as possible while still avoiding tearing,
-        //  resulting in fewer latency issues than standard vertical sync. This is commonly known as "triple buffering"
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-        {
-            return availablePresentMode;
-        }
-    }
-
-    // Only the VK_PRESENT_MODE_FIFO_KHR mode is guaranteed to be available
-    return VK_PRESENT_MODE_FIFO_KHR;
-}
-
-VkExtent2D VulkanApp::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const
-{
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
-    {
-        return capabilities.currentExtent;
-    }
-    
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-
-    VkExtent2D actualExtent =
-    {
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height)
-    };
-
-    actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-    actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-    return actualExtent;
-}
-
 uint32_t VulkanApp::FindMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties) const
 {
     VkPhysicalDeviceMemoryProperties memProperties;
@@ -159,9 +105,9 @@ void VulkanApp::InitWindow()
     // We tell them we don't want an OpenGL context
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, FramebufferResizeCallback);
+    mGlfwWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(mGlfwWindow, this);
+    glfwSetFramebufferSizeCallback(mGlfwWindow, FramebufferResizeCallback);
 }
 
 void VulkanApp::InitVulkan()
@@ -190,7 +136,7 @@ void VulkanApp::InitVulkan()
     vkGetDeviceQueue(vkDevice, presentFamily.value(), 0, &vkPresentQueue);
 
     // Now we create the Swap Chain
-    CreateSwapChain();
+    mVSwapChain = VSwapChain::CreateSwapChain(mVkPhysicalDevice, mVkSurface, vkDevice, mGlfwWindow);
     // An image view is quite literally a view into an image. It describes how to access the image and which
     // part of the image to access, for example if it should be treated as a 2D texture depth texture without any mipmapping levels
     
@@ -277,7 +223,7 @@ void VulkanApp::CreateInstance()
 
 void VulkanApp::CreateSurface()
 {
-    if (glfwCreateWindowSurface(mVkInstance, window, nullptr, &mVkSurface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(mVkInstance, mGlfwWindow, nullptr, &mVkSurface) != VK_SUCCESS)
     {
         std::cout << "failed to create window surface!" << '\n';
     }
@@ -285,86 +231,17 @@ void VulkanApp::CreateSurface()
 
 void VulkanApp::CreateSwapChain()
 {
-    const SwapChainSupportDetails swapChainSupport = VPhysicalDevice::QuerySwapChainSupport(mVkPhysicalDevice, mVkSurface);
     
-    const VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
-    const VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
-    const VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
-
-    // Aside from these properties we also have to decide how many images we would like to have in the swap chain.
-    // The implementation specifies the minimum number that it requires to function:
-    
-    // However, simply sticking to this minimum means that we may sometimes have to wait on the driver to
-    // complete internal operations before we can acquire another image to render to. Therefore it is
-    // recommended to request at least one more image than the minimum:
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-
-    // We should also make sure to not exceed the maximum number of images while doing this,
-    // where 0 is a special value that means that there is no maximum
-    if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-    {
-        imageCount = swapChainSupport.capabilities.maxImageCount;
-    }
-
-    // As per usual, we fill a struct
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = mVkSurface;
-    createInfo.minImageCount = imageCount;
-    createInfo.imageFormat = surfaceFormat.format;
-    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-
-    const QueueFamilyIndices indices = VPhysicalDevice::FindQueueFamilies(mVkPhysicalDevice, mVkSurface);
-    const uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
-
-    // Next, we need to specify how to handle swap chain images that will be used across multiple queue families
-    if (indices.graphicsFamily != indices.presentFamily)
-    {
-        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = 2;
-        createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    }
-    else
-    {
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-
-    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-
-    // The compositeAlpha field specifies if the alpha channel should be used for blending with other windows in the
-    // window system. You’ll almost always want to simply ignore the alpha channel, hence VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR.
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = presentMode;
-    createInfo.clipped = VK_TRUE;
-    
-    // And now we can create the Swap Chain
-    if (vkCreateSwapchainKHR(vkDevice, &createInfo, nullptr, &vkSwapChain) != VK_SUCCESS)
-    {
-        std::cout << "Failed to create swap chain!" << '\n';
-    }
-
-    // We need to retrieve the handles of the VkImages in it
-    vkGetSwapchainImagesKHR(vkDevice, vkSwapChain, &imageCount, nullptr);
-    swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(vkDevice, vkSwapChain, &imageCount, swapChainImages.data());
-
-    // store the format and extent we’ve chosen for the swap chain images
-    swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
 }
 
 void VulkanApp::ReCreateSwapChain()
 {
     // Handle Minimize
     int width = 0, height = 0;
-    glfwGetFramebufferSize(window, &width, &height);
+    glfwGetFramebufferSize(mGlfwWindow, &width, &height);
     while (width == 0 || height == 0)
     {
-        glfwGetFramebufferSize(window, &width, &height);
+        glfwGetFramebufferSize(mGlfwWindow, &width, &height);
         glfwWaitEvents();
     }
     
@@ -409,11 +286,11 @@ VkImageView VulkanApp::CreateImageView(const VkImage image, const VkFormat forma
 
 void VulkanApp::CreateImageViews()
 {
-    swapChainImageViews.resize(swapChainImages.size());
+    swapChainImageViews.resize(mVSwapChain.swapChainImages.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); i++)
+    for (size_t i = 0; i < mVSwapChain.swapChainImages.size(); i++)
     {
-        swapChainImageViews[i] = CreateImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        swapChainImageViews[i] = CreateImageView(mVSwapChain.swapChainImages[i], mVSwapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 }
 
@@ -626,7 +503,7 @@ void VulkanApp::CreateRenderPass()
 {
     // Now we are using multisampling
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.format = mVSwapChain.swapChainImageFormat;
     colorAttachment.samples = msaaSamples;
 
     // The format of the color attachment should match the format of the swap chain images,
@@ -654,7 +531,7 @@ void VulkanApp::CreateRenderPass()
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription colorAttachmentResolve{};
-    colorAttachmentResolve.format = swapChainImageFormat;
+    colorAttachmentResolve.format = mVSwapChain.swapChainImageFormat;
     colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -727,8 +604,8 @@ void VulkanApp::CreateFramebuffers()
         framebufferInfo.renderPass = vkRenderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
         framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.width = mVSwapChain.swapChainExtent.width;
+        framebufferInfo.height = mVSwapChain.swapChainExtent.height;
         framebufferInfo.layers = 1;
 
         if (vkCreateFramebuffer(vkDevice, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
@@ -1184,9 +1061,11 @@ void VulkanApp::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width
 // Create a multisampled color buffer
 void VulkanApp::CreateColorResources()
 {
-    VkFormat colorFormat = swapChainImageFormat;
+    VkFormat colorFormat = mVSwapChain.swapChainImageFormat;
 
-    CreateImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, colorFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkColorImage, vkColorImageMemory);
+    CreateImage(mVSwapChain.swapChainExtent.width, mVSwapChain.swapChainExtent.height, 1, msaaSamples, colorFormat,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkColorImage, vkColorImageMemory);
     vkColorImageView = CreateImageView(vkColorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
@@ -1373,7 +1252,7 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     renderPassInfo.renderPass = vkRenderPass;
     renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapChainExtent;
+    renderPassInfo.renderArea.extent = mVSwapChain.swapChainExtent;
 
     // Clear depth and color
     std::array<VkClearValue, 2> clearValues{};
@@ -1389,15 +1268,15 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapChainExtent.width);
-        viewport.height = static_cast<float>(swapChainExtent.height);
+        viewport.width = static_cast<float>(mVSwapChain.swapChainExtent.width);
+        viewport.height = static_cast<float>(mVSwapChain.swapChainExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = swapChainExtent;
+        scissor.extent = mVSwapChain.swapChainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         VkBuffer vertexBuffers[] = {vkVertexBuffer};
@@ -1473,7 +1352,7 @@ void VulkanApp::UpdateUniformBuffer(const uint32_t currentImage) const
     UniformBufferObject ubo;
     ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), mVSwapChain.swapChainExtent.width / static_cast<float>(mVSwapChain.swapChainExtent.height), 0.1f, 10.0f);
 
     // GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted.
     // The easiest way to compensate for that is to flip the sign on the scaling factor of the Y axis in the projection matrix.
@@ -1518,7 +1397,7 @@ VkFormat VulkanApp::FindSupportedFormat(const std::vector<VkFormat>& candidates,
 void VulkanApp::CreateDepthResources()
 {
     const VkFormat depthFormat = FindDepthFormat();
-    CreateImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL,
+    CreateImage(mVSwapChain.swapChainExtent.width, mVSwapChain.swapChainExtent.height, 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkDepthImage,
                 vkDepthImageMemory);
     vkDepthImageView = CreateImageView(vkDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
@@ -1532,7 +1411,7 @@ void VulkanApp::DrawFrame()
     
     //  2. Acquire an image from the swakop chain
     uint32_t imageIndex;
-    const VkResult result = vkAcquireNextImageKHR(vkDevice, vkSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    const VkResult result = vkAcquireNextImageKHR(vkDevice, mVSwapChain.vkSwapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -1590,7 +1469,7 @@ void VulkanApp::DrawFrame()
     presentInfo.pWaitSemaphores = signalSemaphores;
 
     // Specify the swap chains to present images to and the index of the image for each swap chain
-    VkSwapchainKHR swapChains[] = { vkSwapChain };
+    const VkSwapchainKHR swapChains[] = { mVSwapChain.vkSwapChain };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
@@ -1613,7 +1492,7 @@ void VulkanApp::DrawFrame()
 
 void VulkanApp::MainLoop()
 {
-    while (!glfwWindowShouldClose(window))
+    while (!glfwWindowShouldClose(mGlfwWindow))
     {
         glfwPollEvents();
         DrawFrame();
@@ -1638,7 +1517,7 @@ void VulkanApp::CleanupSwapChain() const
         vkDestroyImageView(vkDevice, imageView, nullptr);
     }
 
-    vkDestroySwapchainKHR(vkDevice, vkSwapChain, nullptr);
+    vkDestroySwapchainKHR(vkDevice, mVSwapChain.vkSwapChain, nullptr);
 }
 
 void VulkanApp::Cleanup() const
@@ -1692,7 +1571,7 @@ void VulkanApp::Cleanup() const
     vkDestroySurfaceKHR(mVkInstance, mVkSurface, nullptr);
     vkDestroyInstance(mVkInstance, nullptr);
 
-    glfwDestroyWindow(window);
+    glfwDestroyWindow(mGlfwWindow);
 
     glfwTerminate();
 }

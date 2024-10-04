@@ -14,6 +14,8 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
+#include "renderer/VSwapChain.hpp"
+
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
@@ -91,7 +93,7 @@ private:
     uint32_t currentFrame = 0;
     bool framebufferResized = false;
     
-    GLFWwindow* window = nullptr;
+    GLFWwindow* mGlfwWindow = nullptr;
 
     VkInstance mVkInstance = nullptr;
     VkDebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -102,11 +104,8 @@ private:
     VkDevice vkDevice = VK_NULL_HANDLE;
     VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
     VkQueue vkPresentQueue = VK_NULL_HANDLE;
-    
-    VkSwapchainKHR vkSwapChain = VK_NULL_HANDLE;
-    std::vector<VkImage> swapChainImages;
-    VkFormat swapChainImageFormat = VK_FORMAT_UNDEFINED;
-    VkExtent2D swapChainExtent = {};
+
+    Renderer::VSwapChain::VSwapChain mVSwapChain;
     std::vector<VkImageView> swapChainImageViews;
     
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;

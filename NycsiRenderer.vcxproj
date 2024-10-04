@@ -164,6 +164,7 @@
     <ClCompile Include="NycsiRenderer.cpp" />
     <ClCompile Include="source\renderer\VLogicalDevice.cpp" />
     <ClCompile Include="source\renderer\VPhysicalDevice.cpp" />
+    <ClCompile Include="source\renderer\VSwapChain.cpp" />
     <ClCompile Include="source\VulkanApp.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -641,6 +642,7 @@
     <ClInclude Include="source\renderer\VLogicalDevice.hpp" />
     <ClInclude Include="source\renderer\VPhysicalDevice.hpp" />
     <ClInclude Include="source\renderer\VPods.hpp" />
+    <ClInclude Include="source\renderer\VSwapChain.hpp" />
     <ClInclude Include="source\VulkanApp.h" />
   </ItemGroup>
   <ItemGroup>
