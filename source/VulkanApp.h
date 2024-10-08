@@ -5,6 +5,7 @@
 #include <xstring>
 #include <GLFW/glfw3.h>
 
+#include "renderer/VImage.h"
 #include "renderer/VPods.hpp"
 #include "renderer/VSwapChain.hpp"
 
@@ -39,7 +40,7 @@ private:
     VkPhysicalDevice mVkPhysicalDevice = VK_NULL_HANDLE;
     
     // Set in CreateLogicalDevice
-    VkDevice vkDevice = VK_NULL_HANDLE;
+    VkDevice mVkDevice = VK_NULL_HANDLE;
     VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
     VkQueue vkPresentQueue = VK_NULL_HANDLE;
 
@@ -75,25 +76,21 @@ private:
 
     // Texture
     uint32_t vkMipLevels = 1;
-    VkImage vkTextureImage = VK_NULL_HANDLE;
-    VkDeviceMemory vkTextureImageMemory = VK_NULL_HANDLE;
+    Renderer::VImage::VImageHandler mTextureImageHandler;
     VkImageView vkTextureImageView = VK_NULL_HANDLE;
     VkSampler vkTextureSampler = VK_NULL_HANDLE;
 
     // Depth Buffer
-    VkImage vkDepthImage = VK_NULL_HANDLE;
-    VkDeviceMemory vkDepthImageMemory = VK_NULL_HANDLE;
-    VkImageView vkDepthImageView = VK_NULL_HANDLE;
+    Renderer::VImage::VImageHandler mDepthImageHandler;
+    VkImageView vkDepthImageView = VK_NULL_HANDLE; // This probably should go with the image? maybe
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
     // Multisampling
-    VkImage vkColorImage = VK_NULL_HANDLE;
-    VkDeviceMemory vkColorImageMemory = VK_NULL_HANDLE;
+    Renderer::VImage::VImageHandler mColorImageHandler;
     VkImageView vkColorImageView = VK_NULL_HANDLE;
 
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
-    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
     // Creation Methods
     void InitWindow();
@@ -114,10 +111,7 @@ private:
     // Textures
     void CreateTextureImage();
     void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) const;
-    void CreateTextureImageView();
     void CreateTextureSampler();
-    void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-                     VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) const;
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
     

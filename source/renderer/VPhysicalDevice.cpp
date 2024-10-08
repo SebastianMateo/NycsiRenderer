@@ -172,4 +172,20 @@ namespace Renderer::VPhysicalDevice
 
         return VK_SAMPLE_COUNT_1_BIT;
     }
+
+    uint32_t FindMemoryType(const VkPhysicalDevice vkPhysicalDevice, const uint32_t typeFilter, const VkMemoryPropertyFlags properties)
+    {
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(vkPhysicalDevice, &memProperties);
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+
+        throw std::runtime_error("failed to find suitable memory type!");
+    }
 }
