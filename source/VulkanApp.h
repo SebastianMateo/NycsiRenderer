@@ -48,10 +48,10 @@ private:
     
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
     VkRenderPass mVkRenderPass = VK_NULL_HANDLE;
-    VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE; 
+    VkDescriptorSetLayout mVkDescriptorSetLayout = VK_NULL_HANDLE; 
     VkPipelineLayout vkPipelineLayout = VK_NULL_HANDLE;
     VkPipeline vkGraphicsPipeline = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> swapChainFramebuffers;
+    std::vector<VkFramebuffer> mSwapChainFramebuffers;
     
     VkCommandPool vkCommandPool = VK_NULL_HANDLE;
 
@@ -103,7 +103,6 @@ private:
     VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
     // Drawing
-    void CreateFramebuffers();
     void CreateCommandPool();
 
     // Textures

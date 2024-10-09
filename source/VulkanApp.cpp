@@ -107,7 +107,7 @@ void VulkanApp::InitVulkan()
 
     // After selecting a physical device to use we need to set up a logical device to interface with i
     mVkDevice = VLogicalDevice::CreateLogicalDevice(mVkPhysicalDevice, mVkSurface);
-    
+
     // The queues were already created, just get them...
     auto [graphicsFamily, presentFamily] = VPhysicalDevice::FindQueueFamilies(mVkPhysicalDevice, mVkSurface);
     vkGetDeviceQueue(mVkDevice, graphicsFamily.value(), 0, &vkGraphicsQueue);
@@ -118,13 +118,16 @@ void VulkanApp::InitVulkan()
 
     // Random creation things
     mVkRenderPass = VLogicalDevice::CreateRenderPass(mVkPhysicalDevice, mVkDevice, mVSwapChain, msaaSamples);
+
     CreateDescriptorSetLayout();
+
     CreateGraphicsPipeline();
 
+    // This creates Image and Image Views
     CreateColorResources();
     CreateDepthResources();
 
-    CreateFramebuffers();
+    mSwapChainFramebuffers = VLogicalDevice::CreateFramebuffers(mVkDevice, mVkRenderPass, mVSwapChain, vkColorImageView, vkDepthImageView);
     CreateCommandPool();
     CreateTextureImage();
     
@@ -209,12 +212,12 @@ void VulkanApp::ReCreateSwapChain()
     // We need to wait as we can't use devices still in use
     vkDeviceWaitIdle(mVkDevice);
 
-    VSwapChain::CleanupSwapChain(mVkDevice, vkColorImageView, mColorImageHandler.image, mColorImageHandler.imageMemory, mVSwapChain, swapChainFramebuffers);
+    VSwapChain::CleanupSwapChain(mVkDevice, vkColorImageView, mColorImageHandler.image, mColorImageHandler.imageMemory, mVSwapChain, mSwapChainFramebuffers);
 
     mVSwapChain = VSwapChain::CreateSwapChain(mVkPhysicalDevice, mVkSurface, mVkDevice,  mGlfwWindow);
     CreateColorResources();
     CreateDepthResources();
-    CreateFramebuffers();
+    mSwapChainFramebuffers = VLogicalDevice::CreateFramebuffers(mVkDevice, mVkRenderPass, mVSwapChain, vkColorImageView, vkDepthImageView);
 }
 
 void VulkanApp::CreateDescriptorSetLayout()
@@ -240,7 +243,7 @@ void VulkanApp::CreateDescriptorSetLayout()
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(mVkDevice, &layoutInfo, nullptr, &vkDescriptorSetLayout) != VK_SUCCESS)
+    if (vkCreateDescriptorSetLayout(mVkDevice, &layoutInfo, nullptr, &mVkDescriptorSetLayout) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
@@ -282,12 +285,12 @@ void VulkanApp::CreateGraphicsPipeline()
 
     auto bindingDescription = Vertex::GetBindingDescription();
     auto attributeDescriptions = Vertex::GetAttributeDescriptions();
-    
+
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-    
+
     // Input assembly
     // Describes what kind of geometry will be drawn from the vertices and if primitive restart should be enabled
     // We can have things like VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, etc
@@ -327,7 +330,7 @@ void VulkanApp::CreateGraphicsPipeline()
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
-    
+
     // Color Blend
     // Mix the old and new value to produce a final color
     // Combine the old and new value using a bitwise operation
@@ -352,13 +355,13 @@ void VulkanApp::CreateGraphicsPipeline()
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
-    
+
     // We need to specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &vkDescriptorSetLayout;
-    
+    pipelineLayoutInfo.pSetLayouts = &mVkDescriptorSetLayout;
+
     if (vkCreatePipelineLayout(mVkDevice, &pipelineLayoutInfo, nullptr, &vkPipelineLayout) != VK_SUCCESS)
     {
         std::cout << "Failed to create pipeline layout!" << '\n';
@@ -392,8 +395,6 @@ void VulkanApp::CreateGraphicsPipeline()
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
     pipelineInfo.pDepthStencilState = &depthStencil;
 
-    CreateDescriptorSetLayout();
-    
     // FINALLY
     if (vkCreateGraphicsPipelines(mVkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vkGraphicsPipeline) != VK_SUCCESS)
     {
@@ -420,35 +421,6 @@ VkShaderModule VulkanApp::CreateShaderModule(const std::vector<char>& code) cons
     }
 
     return shaderModule;
-}
-
-void VulkanApp::CreateFramebuffers()
-{
-    swapChainFramebuffers.resize(mVSwapChain.swapChainImageViews.size());
-
-    // We’ll then iterate through the image views and create framebuffers from them:
-    for (size_t i = 0; i < mVSwapChain.swapChainImageViews.size(); i++)
-    {
-        std::array<VkImageView, 3> attachments = {
-            vkColorImageView,
-            vkDepthImageView,
-            mVSwapChain.swapChainImageViews[i],
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = mVkRenderPass;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = mVSwapChain.swapChainExtent.width;
-        framebufferInfo.height = mVSwapChain.swapChainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(mVkDevice, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
-        {
-            std::cout << "failed to create framebuffer!" << '\n';
-        }
-    }
 }
 
 void VulkanApp::CreateCommandPool()
@@ -940,8 +912,7 @@ void VulkanApp::CreateDescriptorPool()
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(maxFramesInFlight);
-
+    
     // Aside from the maximum number of individual descriptors that are available,
     // we also need to specify the maximum number of descriptor sets that may be allocated:
     poolInfo.maxSets = static_cast<uint32_t>(maxFramesInFlight);
@@ -954,7 +925,7 @@ void VulkanApp::CreateDescriptorPool()
 void VulkanApp::CreateDescriptorSets()
 {
     // A descriptor set allocation is described with a VkDescriptorSetAllocateInfo struct
-    std::vector<VkDescriptorSetLayout> layouts(maxFramesInFlight, vkDescriptorSetLayout);
+    const std::vector layouts(maxFramesInFlight, mVkDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = vkDescriptorPool;
@@ -1065,7 +1036,7 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = mVkRenderPass;
-    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+    renderPassInfo.framebuffer = mSwapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = mVSwapChain.swapChainExtent;
 
@@ -1302,7 +1273,7 @@ void VulkanApp::MainLoop()
 
 void VulkanApp::Cleanup() const
 {
-    VSwapChain::CleanupSwapChain(mVkDevice, vkColorImageView, mColorImageHandler.image, mColorImageHandler.imageMemory, mVSwapChain, swapChainFramebuffers);
+    VSwapChain::CleanupSwapChain(mVkDevice, vkColorImageView, mColorImageHandler.image, mColorImageHandler.imageMemory, mVSwapChain, mSwapChainFramebuffers);
 
     // Cleanup Textures
     vkDestroySampler(mVkDevice, vkTextureSampler, nullptr);
@@ -1311,7 +1282,7 @@ void VulkanApp::Cleanup() const
     
     vkFreeMemory(mVkDevice, mTextureImageHandler.imageMemory, nullptr);
     
-    vkDestroyDescriptorSetLayout(mVkDevice, vkDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(mVkDevice, mVkDescriptorSetLayout, nullptr);
 
     for (size_t i = 0; i < maxFramesInFlight; i++)
     {
@@ -1321,7 +1292,7 @@ void VulkanApp::Cleanup() const
 
     vkDestroyDescriptorPool(mVkDevice, vkDescriptorPool, nullptr);
 
-    vkDestroyDescriptorSetLayout(mVkDevice, vkDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(mVkDevice, mVkDescriptorSetLayout, nullptr);
     
     vkDestroyBuffer(mVkDevice, vkIndexBuffer, nullptr);
     vkFreeMemory(mVkDevice, vkIndexBufferMemory, nullptr);

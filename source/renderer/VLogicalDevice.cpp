@@ -158,4 +158,69 @@ namespace Renderer::VLogicalDevice
 
         return vkRenderPass;
     }
+
+    std::vector<VkFramebuffer> CreateFramebuffers(
+        const VkDevice vkDevice,
+        const VkRenderPass vkRenderPass,
+        const VSwapChain::VSwapChain& vSwapChain,
+        const VkImageView vkColorImageView,
+        const VkImageView vkDepthImageView
+    )
+    {
+        std::vector<VkFramebuffer> swapChainFramebuffers;
+        swapChainFramebuffers.resize(vSwapChain.swapChainImageViews.size());
+
+        // We’ll then iterate through the image views and create framebuffers from them:
+        for (size_t i = 0; i < vSwapChain.swapChainImageViews.size(); i++)
+        {
+            std::array attachments = { vkColorImageView, vkDepthImageView, vSwapChain.swapChainImageViews[i] };
+
+            VkFramebufferCreateInfo framebufferInfo{};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.renderPass = vkRenderPass;
+            framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
+            framebufferInfo.pAttachments = attachments.data();
+            framebufferInfo.width = vSwapChain.swapChainExtent.width;
+            framebufferInfo.height = vSwapChain.swapChainExtent.height;
+            framebufferInfo.layers = 1;
+
+            if (vkCreateFramebuffer(vkDevice, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
+            {
+                std::cout << "failed to create framebuffer!" << '\n';
+            }
+        }
+        return swapChainFramebuffers;
+    }
+
+    VkDescriptorSetLayout CreateDescriptorSetLayout(const VkDevice vkDevice)
+    {
+        VkDescriptorSetLayoutBinding uboLayoutBinding;
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkDescriptorSetLayoutBinding samplerLayoutBinding;
+        samplerLayoutBinding.binding = 1;
+        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.pImmutableSamplers = nullptr;
+        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    
+        // We need to specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using
+        const std::array bindings = {uboLayoutBinding, samplerLayoutBinding};
+        VkDescriptorSetLayoutCreateInfo layoutInfo;
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        layoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout vkDescriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(vkDevice, &layoutInfo, nullptr, &vkDescriptorSetLayout) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+
+        return vkDescriptorSetLayout;
+    }
 }
