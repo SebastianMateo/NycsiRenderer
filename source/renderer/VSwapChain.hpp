@@ -16,8 +16,12 @@ namespace Renderer::VSwapChain
     };
         
     VSwapChain CreateSwapChain(VkPhysicalDevice vkPhysicalDevice, VkSurfaceKHR vkSurface, VkDevice vkDevice, GLFWwindow* glfwWindow);
-    VkImageView CreateImageView(VkDevice vkDevice, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
-    void CleanupSwapChain(VkDevice vkDevice, VkImageView vkColorImageView, VkImage vkColorImage,
-                          VkDeviceMemory vkColorImageMemory, const VSwapChain& vSwapChain,
-                          const std::vector<VkFramebuffer>& swapChainFramebuffers);
+    void CleanupSwapChain(
+        VkDevice vkDevice,
+        VkImageView vkColorImageView,
+        VkImage vkColorImage,
+        VkDeviceMemory vkColorImageMemory,
+        const VSwapChain& vSwapChain,
+        const std::vector<VkFramebuffer>& swapChainFramebuffers
+    );
 }

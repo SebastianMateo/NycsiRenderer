@@ -28,6 +28,14 @@ namespace Renderer::VImage
         uint32_t height,
         const VImageProperties& imageProperties
     );
+
+    VkImageView CreateImageView(
+        const VkDevice vkDevice,
+        const VkImage image,
+        const VkFormat format,
+        const VkImageAspectFlags aspectFlags,
+        const uint32_t mipLevels
+    );
 };
 
 

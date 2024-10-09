@@ -5,7 +5,7 @@
 #include <xstring>
 #include <GLFW/glfw3.h>
 
-#include "renderer/VImage.h"
+#include "renderer/VImage.hpp"
 #include "renderer/VPods.hpp"
 #include "renderer/VSwapChain.hpp"
 
@@ -47,7 +47,7 @@ private:
     Renderer::VSwapChain::VSwapChain mVSwapChain;
     
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
-    VkRenderPass vkRenderPass = VK_NULL_HANDLE;
+    VkRenderPass mVkRenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE; 
     VkPipelineLayout vkPipelineLayout = VK_NULL_HANDLE;
     VkPipeline vkGraphicsPipeline = VK_NULL_HANDLE;
@@ -97,12 +97,10 @@ private:
     void InitVulkan();
     void CreateInstance();
     
-    void CreateSurface();
     void ReCreateSwapChain();
     void CreateDescriptorSetLayout();
     void CreateGraphicsPipeline();
     VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
-    void CreateRenderPass();
 
     // Drawing
     void CreateFramebuffers();
@@ -138,8 +136,6 @@ private:
     
     // Depth Buffer
     static bool HasStencilComponent(VkFormat format);
-    VkFormat FindDepthFormat() const;
-    VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const;
     void CreateDepthResources();
     
     void DrawFrame();

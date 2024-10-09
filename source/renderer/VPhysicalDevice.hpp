@@ -21,5 +21,13 @@ namespace Renderer::VPhysicalDevice
 
     bool IsDeviceSuitable(VkPhysicalDevice vkPhysicalDevice, VkSurfaceKHR vkSurface);
     bool CheckDeviceExtensionSupport(VkPhysicalDevice vkPhysicalDevice);
-    uint32_t FindMemoryType(const VkPhysicalDevice vkPhysicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    uint32_t FindMemoryType(VkPhysicalDevice vkPhysicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    VkFormat FindSupportedFormat(
+        VkPhysicalDevice vkPhysicalDevice,
+        const std::vector<VkFormat>& candidates,
+        VkImageTiling tiling,
+        VkFormatFeatureFlags features
+    );
+
+    VkFormat FindDepthFormat(VkPhysicalDevice vkPhysicalDevice);
 }

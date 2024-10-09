@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 
+#include "VImage.hpp"
 #include "VPhysicalDevice.hpp"
 #include "VPods.hpp"
 #include "GLFW/glfw3.h"
@@ -100,7 +101,7 @@ namespace Renderer::VSwapChain
 
         for (size_t i = 0; i < vSwapChain.swapChainImages.size(); i++)
         {
-            vSwapChain.swapChainImageViews[i] = CreateImageView(vkDevice, vSwapChain.swapChainImages[i], vSwapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+            vSwapChain.swapChainImageViews[i] = VImage::CreateImageView(vkDevice, vSwapChain.swapChainImages[i], vSwapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
         }
         
         return vSwapChain;
@@ -179,37 +180,5 @@ namespace Renderer::VSwapChain
         actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
         return actualExtent;
-    }
-
-    VkImageView CreateImageView(
-        const VkDevice vkDevice,
-        const VkImage image,
-        const VkFormat format,
-        const VkImageAspectFlags aspectFlags,
-        const uint32_t mipLevels)
-    {
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = image;
-    
-        // The viewType and format fields specify how the image data should be interpreted.
-        // The viewType parameter allows you to treat images as 1D textures, 2D textures, 3D textures and cube maps
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = format;
-    
-        // The subresourceRange field describes what the image's purpose is and which part of the image should be accessed.
-        viewInfo.subresourceRange.aspectMask = aspectFlags; //VK_IMAGE_ASPECT_DEPTH_BIT or VK_IMAGE_ASPECT_COLOR_BIT for example
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = mipLevels;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-
-        VkImageView imageView;
-        if (vkCreateImageView(vkDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create image view!");
-        }
-
-        return imageView;
     }
 }

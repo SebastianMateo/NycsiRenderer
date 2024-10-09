@@ -18,7 +18,7 @@
 #include <stb_image.h>
 #include <unordered_map>
 
-#include "renderer/VImage.h"
+#include "renderer/VImage.hpp"
 #include "renderer/VLogicalDevice.hpp"
 #include "renderer/VPhysicalDevice.hpp"
 #include "renderer/VPods.hpp"
@@ -98,10 +98,8 @@ void VulkanApp::InitVulkan()
         SetupDebugMessenger();
     #endif
     
-    // Since Vulkan is a platform agnostic API, it can not interface directly with the window system on its own
-    // The window surface needs to be created right after the instance creation, because it can actually
-    // influence the physical device selection
-    CreateSurface();
+    // As Vulkan is platform agnostic, create the surface just after instance creation
+    assert(glfwCreateWindowSurface(mVkInstance, mGlfwWindow, nullptr, &mVkSurface) == false);
 
     // Create the Physical Device Class
     mVkPhysicalDevice = VPhysicalDevice::CreatePhysicalDevice(mVkInstance, mVkSurface);
@@ -119,13 +117,13 @@ void VulkanApp::InitVulkan()
     mVSwapChain = VSwapChain::CreateSwapChain(mVkPhysicalDevice, mVkSurface, mVkDevice, mGlfwWindow);
 
     // Random creation things
-    CreateRenderPass();
+    mVkRenderPass = VLogicalDevice::CreateRenderPass(mVkPhysicalDevice, mVkDevice, mVSwapChain, msaaSamples);
     CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
 
     CreateColorResources();
     CreateDepthResources();
-    
+
     CreateFramebuffers();
     CreateCommandPool();
     CreateTextureImage();
@@ -197,14 +195,6 @@ void VulkanApp::CreateInstance()
     }
 }
 
-void VulkanApp::CreateSurface()
-{
-    if (glfwCreateWindowSurface(mVkInstance, mGlfwWindow, nullptr, &mVkSurface) != VK_SUCCESS)
-    {
-        std::cout << "failed to create window surface!" << '\n';
-    }
-}
-
 void VulkanApp::ReCreateSwapChain()
 {
     // Handle Minimize
@@ -220,7 +210,7 @@ void VulkanApp::ReCreateSwapChain()
     vkDeviceWaitIdle(mVkDevice);
 
     VSwapChain::CleanupSwapChain(mVkDevice, vkColorImageView, mColorImageHandler.image, mColorImageHandler.imageMemory, mVSwapChain, swapChainFramebuffers);
-    
+
     mVSwapChain = VSwapChain::CreateSwapChain(mVkPhysicalDevice, mVkSurface, mVkDevice,  mGlfwWindow);
     CreateColorResources();
     CreateDepthResources();
@@ -395,7 +385,7 @@ void VulkanApp::CreateGraphicsPipeline()
     pipelineInfo.layout = vkPipelineLayout;
 
     // And finally we have the reference to the render pass and the index of the sub pass
-    pipelineInfo.renderPass = vkRenderPass;
+    pipelineInfo.renderPass = mVkRenderPass;
     pipelineInfo.subpass = 0;
 
     // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline
@@ -432,93 +422,6 @@ VkShaderModule VulkanApp::CreateShaderModule(const std::vector<char>& code) cons
     return shaderModule;
 }
 
-void VulkanApp::CreateRenderPass()
-{
-    // Now we are using multisampling
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = mVSwapChain.swapChainImageFormat;
-    colorAttachment.samples = msaaSamples;
-
-    // The format of the color attachment should match the format of the swap chain images,
-    // and we’re not doing anything with multisampling yet, so we’ll stick to 1 sample
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-    // Our application won’t do anything with the stencil buffer, so the results of loading and storing are irrelevant.
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-    // The layout of the pixels in memory can change based on what you’re trying to do with an image.
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // because multisampled images cannot be presented directly
-
-    // Depth
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = FindDepthFormat();
-    depthAttachment.samples = msaaSamples;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentDescription colorAttachmentResolve{};
-    colorAttachmentResolve.format = mVSwapChain.swapChainImageFormat;
-    colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colorAttachmentResolveRef{};
-    colorAttachmentResolveRef.attachment = 2;
-    colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    
-    // Subpassses
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-    subpass.pResolveAttachments = &colorAttachmentResolveRef;
-    
-    // Subpass dependencies
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    
-    // We can finally create the render pass
-    std::array<VkAttachmentDescription, 3> attachments = {colorAttachment, depthAttachment, colorAttachmentResolve};
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    if (vkCreateRenderPass(mVkDevice, &renderPassInfo, nullptr, &vkRenderPass) != VK_SUCCESS)
-    {
-        std::cout << "Failed to create render pass!" << '\n';
-    }
-}
-
 void VulkanApp::CreateFramebuffers()
 {
     swapChainFramebuffers.resize(mVSwapChain.swapChainImageViews.size());
@@ -534,7 +437,7 @@ void VulkanApp::CreateFramebuffers()
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = vkRenderPass;
+        framebufferInfo.renderPass = mVkRenderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
         framebufferInfo.pAttachments = attachments.data();
         framebufferInfo.width = mVSwapChain.swapChainExtent.width;
@@ -612,7 +515,7 @@ void VulkanApp::CreateTextureImage()
 
     GenerateMipmaps(mTextureImageHandler.image, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, vkMipLevels);
 
-    vkTextureImageView = VSwapChain::CreateImageView(mVkDevice, mTextureImageHandler.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, vkMipLevels);
+    vkTextureImageView = VImage::CreateImageView(mVkDevice, mTextureImageHandler.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, vkMipLevels);
 }
 
 void VulkanApp::GenerateMipmaps(
@@ -967,7 +870,9 @@ void VulkanApp::CreateColorResources()
 
     const VImage::VImageProperties imageProperties
     {
-        1, msaaSamples, colorFormat,
+        1,
+        msaaSamples,
+        colorFormat,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -976,7 +881,7 @@ void VulkanApp::CreateColorResources()
     const uint32_t width = mVSwapChain.swapChainExtent.width;
     const uint32_t height = mVSwapChain.swapChainExtent.height;
     mColorImageHandler = VImage::CreateImage(mVkPhysicalDevice, mVkDevice, width, height, imageProperties);
-    vkColorImageView = VSwapChain::CreateImageView(mVkDevice, mColorImageHandler.image, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    vkColorImageView = VImage::CreateImageView(mVkDevice, mColorImageHandler.image, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
 void VulkanApp::CreateIndexBuffer()
@@ -1159,7 +1064,7 @@ void VulkanApp::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     // Drawing starts by beginning the render pass with vkCmdBeginRenderPass
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = vkRenderPass;
+    renderPassInfo.renderPass = mVkRenderPass;
     renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = mVSwapChain.swapChainExtent;
@@ -1278,35 +1183,9 @@ bool VulkanApp::HasStencilComponent(const VkFormat format)
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
-VkFormat VulkanApp::FindDepthFormat() const
-{
-    return FindSupportedFormat(
-       {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-       VK_IMAGE_TILING_OPTIMAL,
-       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
-   );
-}
-
-VkFormat VulkanApp::FindSupportedFormat(const std::vector<VkFormat>& candidates, const VkImageTiling tiling, const VkFormatFeatureFlags features) const
-{
-    for (const VkFormat format : candidates)
-    {
-        VkFormatProperties props;
-        vkGetPhysicalDeviceFormatProperties(mVkPhysicalDevice, format, &props); // TODO Move to Physical Device
-
-        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
-            return format;
-
-        if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
-            return format;
-    }
-
-    throw std::runtime_error("failed to find supported format!");
-}
-
 void VulkanApp::CreateDepthResources()
 {
-    const VkFormat depthFormat = FindDepthFormat();
+    const VkFormat depthFormat = VPhysicalDevice::FindDepthFormat(mVkPhysicalDevice);
     const VImage::VImageProperties imageProperties
     {
         1, 
@@ -1319,8 +1198,8 @@ void VulkanApp::CreateDepthResources()
 
     const uint32_t width = mVSwapChain.swapChainExtent.width;
     const uint32_t height = mVSwapChain.swapChainExtent.height;
-    mDepthImageHandler = CreateImage(mVkPhysicalDevice, mVkDevice, width, height, imageProperties);
-    vkDepthImageView = VSwapChain::CreateImageView(mVkDevice, mDepthImageHandler.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    mDepthImageHandler = VImage::CreateImage(mVkPhysicalDevice, mVkDevice, width, height, imageProperties);
+    vkDepthImageView = VImage::CreateImageView(mVkDevice, mDepthImageHandler.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
 void VulkanApp::DrawFrame()
@@ -1461,7 +1340,7 @@ void VulkanApp::Cleanup() const
     vkDestroyCommandPool(mVkDevice, vkCommandPool, nullptr);
     vkDestroyPipeline(mVkDevice, vkGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(mVkDevice, vkPipelineLayout, nullptr);
-    vkDestroyRenderPass(mVkDevice, vkRenderPass, nullptr);
+    vkDestroyRenderPass(mVkDevice, mVkRenderPass, nullptr);
     vkDestroyDevice(mVkDevice, nullptr);
 
     #ifdef _DEBUG

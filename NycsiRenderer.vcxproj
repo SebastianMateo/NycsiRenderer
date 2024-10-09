@@ -640,7 +640,7 @@
     <ClInclude Include="external\include\vulkan\vulkan_xcb.h" />
     <ClInclude Include="external\include\vulkan\vulkan_xlib.h" />
     <ClInclude Include="external\include\vulkan\vulkan_xlib_xrandr.h" />
-    <ClInclude Include="source\renderer\VImage.h" />
+    <ClInclude Include="source\renderer\VImage.hpp" />
     <ClInclude Include="source\renderer\VLogicalDevice.hpp" />
     <ClInclude Include="source\renderer\VPhysicalDevice.hpp" />
     <ClInclude Include="source\renderer\VPods.hpp" />
