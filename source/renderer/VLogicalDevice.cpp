@@ -203,14 +203,14 @@ namespace Renderer::VLogicalDevice
 
         VkDescriptorSetLayoutBinding samplerLayoutBinding;
         samplerLayoutBinding.binding = 1;
-        samplerLayoutBinding.descriptorCount = 1;
         samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.descriptorCount = 1;
         samplerLayoutBinding.pImmutableSamplers = nullptr;
         samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     
         // We need to specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using
-        const std::array bindings = {uboLayoutBinding, samplerLayoutBinding};
-        VkDescriptorSetLayoutCreateInfo layoutInfo;
+        const std::array bindings = { uboLayoutBinding, samplerLayoutBinding };
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
@@ -220,7 +220,6 @@ namespace Renderer::VLogicalDevice
         {
             throw std::runtime_error("failed to create descriptor set layout!");
         }
-
         return vkDescriptorSetLayout;
     }
 }

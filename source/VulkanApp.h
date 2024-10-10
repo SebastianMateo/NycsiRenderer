@@ -5,6 +5,7 @@
 #include <xstring>
 #include <GLFW/glfw3.h>
 
+#include "renderer/VGraphicsPipeline.hpp"
 #include "renderer/VImage.hpp"
 #include "renderer/VPods.hpp"
 #include "renderer/VSwapChain.hpp"
@@ -45,12 +46,12 @@ private:
     VkQueue vkPresentQueue = VK_NULL_HANDLE;
 
     Renderer::VSwapChain::VSwapChain mVSwapChain;
+    Renderer::GraphicsPipeline::VGraphicsPipeline mVkGraphicsPipeline;
     
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
     VkRenderPass mVkRenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout mVkDescriptorSetLayout = VK_NULL_HANDLE; 
-    VkPipelineLayout vkPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline vkGraphicsPipeline = VK_NULL_HANDLE;
+    
     std::vector<VkFramebuffer> mSwapChainFramebuffers;
     
     VkCommandPool vkCommandPool = VK_NULL_HANDLE;
@@ -88,7 +89,7 @@ private:
     // Multisampling
     Renderer::VImage::VImageHandler mColorImageHandler;
     VkImageView vkColorImageView = VK_NULL_HANDLE;
-
+    
     // Helpers
     static std::vector<const char*> GetRequiredExtensions();
 
@@ -98,10 +99,7 @@ private:
     void CreateInstance();
     
     void ReCreateSwapChain();
-    void CreateDescriptorSetLayout();
-    void CreateGraphicsPipeline();
-    VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
-
+    
     // Drawing
     void CreateCommandPool();
 
@@ -130,7 +128,6 @@ private:
     void CreateCommandBuffers();
     void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void CreateSyncObjects();
-    static std::vector<char> ReadFile(const std::string& filename);
     void UpdateUniformBuffer(uint32_t currentImage) const;
     
     // Depth Buffer
